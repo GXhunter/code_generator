@@ -10,7 +10,7 @@ velocity.log
 velocity.log.1
 .idea
 /idea/
-
+/target/
 *.ipr
 *.iml
 *.iws
