@@ -16,7 +16,7 @@ public class JsonUtil{
     private static ObjectMapper objectMapper = new ObjectMapper();
     static{
         //只序列化不为null的字段
-        objectMapper.setSerializationInclusion(JsonInclude.Include.ALWAYS);
+        objectMapper.setSerializationInclusion(JsonInclude.Include.NON_NULL);
         //取消默认转换timestamps形式
         objectMapper.configure(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS,false);
         //忽略空Bean转json的错误

@@ -4,8 +4,16 @@ import com.baomidou.mybatisplus.core.exceptions.MybatisPlusException;
 import com.baomidou.mybatisplus.core.toolkit.StringUtils;
 import com.baomidou.mybatisplus.generator.AutoGenerator;
 import com.baomidou.mybatisplus.generator.config.*;
-import com.baomidou.mybatisplus.generator.config.rules.NamingStrategy;
 import com.baomidou.mybatisplus.generator.engine.FreemarkerTemplateEngine;
+import org.apache.commons.io.FileUtils;
+import org.apache.maven.plugin.AbstractMojo;
+import org.apache.maven.plugin.MojoExecutionException;
+import org.apache.maven.plugin.MojoFailureException;
+import org.apache.maven.plugins.annotations.Mojo;
+import org.springframework.core.io.ClassPathResource;
+
+import java.io.File;
+import java.io.IOException;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
@@ -15,84 +23,93 @@ import java.util.*;
 /**
  * @author 树荫下的天空
  * @date 2019/1/14 14:35
+ * 代码生成器
  */
-public class CodeGenerator{
+@Mojo(name = "generate")
+public class CodeGenerator extends AbstractMojo{
 
     /**
      * <p>
      * 读取控制台内容
      * </p>
      */
-    public static String scanner(String tip){
-        Scanner scanner = new Scanner(System.in);
-        StringBuilder help = new StringBuilder();
-        help.append("请输入").append(tip).append("：");
-        System.out.println(help.toString());
-        if(scanner.hasNext()){
-            String ipt = scanner.next();
-            if(ipt.contains("all_")){
-                ipt = ipt.replace("all_","");
-            }else if(StringUtils.isNotEmpty(ipt)){
-                return ipt;
+    private String scanner(String tip){
+        System.out.println(tip + "：");
+        try(
+                Scanner scanner = new Scanner(System.in);
+        ){
+            if(scanner.hasNext()){
+                String ipt = scanner.next();
+                if(StringUtils.isNotEmpty(ipt)){
+                    return ipt;
+                }
             }
         }
+
         throw new MybatisPlusException("请输入正确的" + tip + "！");
     }
 
-    public static void main(String[] args){
-        GeneratorConfig generatorConfig = new GeneratorConfig();
+
+    /**
+     * 获取指定前缀的表名
+     *
+     * @param prefix
+     * @return
+     * @throws Exception
+     */
+    private List<String> exec(DataSourceConfig dataSourceConfig,String... prefix) throws Exception{
+        List<String> list = new ArrayList<>();
+        try(
+                Connection conn = DriverManager.getConnection(dataSourceConfig.getUrl(),dataSourceConfig.getUsername(),dataSourceConfig.getPassword());
+                PreparedStatement ps = conn.prepareStatement("show tables");
+                ResultSet rs = ps.executeQuery()
+        ){
+            while(rs.next()){
+                String tableName = rs.getString(1);
+                if(prefix != null){
+                    for(String aPrefix : prefix){
+                        if(tableName.startsWith(aPrefix)){
+                            list.add(rs.getString(1));
+                        }
+                    }
+                }
+            }
+        }
+        return list;
+    }
+
+    @Override
+    public void execute() throws MojoExecutionException, MojoFailureException{
+        String input;
+        try{
+            File file = new File(System.getProperty("user.dir") + "/src/main/resources/generator.json");
+            input = FileUtils.readFileToString(file,"UTF-8");
+        }catch(IOException e){
+            e.printStackTrace();
+            return;
+        }
+
+        //读取文件
+        //将读取的数据转换为JSONObject
+        GeneratorConfig config = JsonUtil.parse(input,GeneratorConfig.class);
+        assert config != null;
+
         // 代码生成器
         AutoGenerator mpg = new AutoGenerator();
-        RbUtil rb = new RbUtil("generator.properties");
         // 全局配置
-        GlobalConfig gc = new GlobalConfig();
-        String projectPath = System.getProperty("user.dir");
-        gc.setOutputDir(projectPath + "/src/main/java");
-        gc.setFileOverride(true);
-        gc.setAuthor(rb.getString("author"));
-        gc.setOpen(false);
-        gc.setBaseColumnList(true);
-        gc.setBaseResultMap(true);
-        mpg.setGlobalConfig(gc);
+        mpg.setGlobalConfig(config.getGlobalConfig());
 
         // 数据源配置
-
-        DataSourceConfig dsc = new DataSourceConfig();
-        dsc.setUrl(rb.getString("url"));
-        dsc.setDriverName(rb.getString("driverName","com.mysql.jdbc.Driver"));
-        dsc.setUsername(rb.getString("userName"));
-        dsc.setPassword(rb.getString("password"));
-        mpg.setDataSource(dsc);
+        mpg.setDataSource(config.getDataSourceConfig());
         // 包配置
-        PackageConfig pc = new PackageConfig();
-        pc.setModuleName(rb.getString("moduleName"));
-        pc.setParent(rb.getString("parent"));
-        pc.setEntity("po");
-        pc.setXml("mapper");
-        pc.setMapper("dao");
-        mpg.setPackageInfo(pc);
-
-        mpg.setTemplate(new TemplateConfig().setXml(null));
+        mpg.setPackageInfo(config.getPackageConfig());
 
         // 策略配置
-        StrategyConfig strategy = new StrategyConfig();
-        strategy.setEntityLombokModel(true);
-        strategy.setNaming(NamingStrategy.underline_to_camel);
-        strategy.setColumnNaming(NamingStrategy.underline_to_camel);
-        strategy.setSuperEntityClass(rb.getString("basePO"));
-        strategy.setSuperEntityColumns(rb.getString("baseColumns").split(","));
-        strategy.setEntityLombokModel(true);
-        strategy.setSuperControllerClass(rb.getString("baseController"));
-        strategy.setRestControllerStyle(true);
-        strategy.setTablePrefix(rb.getString("tablePrefix"));
-//		strategy.setSuperControllerClass(rb.getString("baseController"));
-        String tbName = scanner(String.format("表名，输入all逆向所有%s前缀的表格",rb.getString("tablePrefix")));
-
-
+        StrategyConfig strategy = config.getStrategyConfig();
+        String tbName = scanner(String.format("请输入表名，输入all逆向所有%s前缀的表格",config.getStrategyConfig().getTablePrefix()));
         if("all".equals(tbName)){
             try{
-                List<String> all = CodeGenerator.exec(dsc.getUrl(),dsc.getUsername(),dsc.getPassword(),
-                        strategy.getTablePrefix());
+                List<String> all = exec(config.getDataSourceConfig(),config.getStrategyConfig().getTablePrefix());
                 strategy.setInclude(all.toArray(new String[all.size()]));
             }catch(Exception e){
                 e.printStackTrace();
@@ -100,43 +117,9 @@ public class CodeGenerator{
         }else{
             strategy.setInclude(tbName);
         }
-        strategy.setControllerMappingHyphenStyle(true);
+
         mpg.setStrategy(strategy);
         mpg.setTemplateEngine(new FreemarkerTemplateEngine());
-//        覆写自带模板
-        mpg.setTemplate(new TemplateConfig().setController("/controller.java"));
         mpg.execute();
-    }
-
-    /**
-     * 获取指定前缀的表名
-     * @param url
-     * @param name
-     * @param passwd
-     * @param prefix
-     * @return
-     * @throws Exception
-     */
-    private static List<String> exec(String url,String name,String passwd,String[] prefix) throws Exception{
-        Connection conn;
-        List<String> list = new ArrayList<>();
-
-        conn = DriverManager.getConnection(url,name,passwd);
-        PreparedStatement ps = conn.prepareStatement("show tables");
-        ResultSet rs = ps.executeQuery();
-        while(rs.next()){
-            String tableName = rs.getString(1);
-            if(prefix != null){
-                for(String aPrefix : prefix){
-                    if(tableName.startsWith(aPrefix)){
-                        list.add(rs.getString(1));
-                    }
-                }
-            }
-
-
-        }
-        conn.close();
-        return list;
     }
 }
