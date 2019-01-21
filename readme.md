@@ -66,6 +66,7 @@
 3. 点击右侧生成按钮
 
    `plugins->generate->generate`
+   
    ![截图](./assert/shot.png)
 
 4. 按要求在控制台输入想要生成的表名，输入`all`生成逆向生成所有。
